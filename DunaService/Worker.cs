@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using MongoDB.Driver;
+using MongoDB.Bson;
 
 namespace DunaService;
 
@@ -22,7 +24,7 @@ public class Worker : BackgroundService
         var replyProps = channel.CreateBasicProperties();
         replyProps.CorrelationId = props.CorrelationId;
         
-        // тут ты работаеш, вызываеш функции, обрабатываешь эту хрень
+        // тут ты работаешь, вызываешь функции, обрабатываешь эту хрень
         
         var body = ea.Body.ToArray();
         // 4 байта - ip, 8 байт - вес файла в байтах, остальное - имя файла и сам файл
@@ -31,12 +33,12 @@ public class Worker : BackgroundService
         var name = Encoding.UTF8.GetString(body[8..^weight]);
         var file = body[^weight..^1];
         
-        // пробросить всё содержимое сообщения через хэш-функцию, таким образом сгенерировать новое имя файла (токен) в 63 символа
+        // пробросить всё содержимое сообщения через хэш-функцию, таким образом сгенерировать новое имя файла (токен) в 64 символа
         // сохранить файл в папку /files
         // добавить запись в базу данных такого содержания:
-        // ip, название файла, токен, размер, UNIX-время, счётчик до удаления (23)
+        // ip, название файла, токен, размер, UNIX-время, счётчик до удаления (24)
         
-        // после того, как ты её обработал, тебе нужно в response записать токен строкой
+        // после того как ты её обработал, тебе нужно в response записать токен строкой
         var responseBytes = Encoding.UTF8.GetBytes(response);
         channel.BasicPublish(exchange: string.Empty,
             routingKey: props.ReplyTo,
@@ -50,7 +52,33 @@ public class Worker : BackgroundService
     {
         using var sha = SHA256.Create();
         var hash = sha.ComputeHash(data);
-        return BitConverter.ToString(hash).Replace("-", "").ToLower();
+        return BitConverter.ToString(hash);
+    }
+    
+    private void SaveFile(string name, byte[] data)
+    {
+        if (!Directory.Exists("files")) Directory.CreateDirectory("files");
+        File.WriteAllBytes($"files/{name}", data);
+    }
+    
+    // сохранить данные в таблицу MongoBD
+    private void SaveToDatabase(byte[] ip, string name, string token, int weight)
+    {
+        var client = new MongoClient("mongodb://localhost:27017");
+        var database = client.GetDatabase("duna");
+        var collection = database.GetCollection<BsonDocument>("files");
+        
+        var document = new BsonDocument
+        {
+            {"ip", new BsonBinaryData(ip)},
+            {"name", name},
+            {"token", token},
+            {"weight", weight},
+            {"time", new BsonDateTime(DateTime.UtcNow)},
+            {"counter", 24}
+        };
+        
+        collection.InsertOne(document);
     }
 
     public Worker(ILogger<Worker> logger)
@@ -72,20 +100,23 @@ public class Worker : BackgroundService
         consumer.Received += Received;
     }
 
+    // каждый час проходимся по всем записям в базе данных и уменьшаем счётчик на 1
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
-            }
+            var client = new MongoClient("mongodb://localhost:27017");
+            var database = client.GetDatabase("duna");
+            var collection = database.GetCollection<BsonDocument>("files");
             
-            channel.BasicConsume(queue: "hello",
-                autoAck: true,
-                consumer: consumer);
+            var filter = Builders<BsonDocument>.Filter.Empty;
+            var update = Builders<BsonDocument>.Update.Inc("counter", -1);
 
-            await Task.Delay(1000, stoppingToken);
+            collection.UpdateMany(filter, update);
+            
+            _logger.LogInformation("All counters decremented");
+
+            await Task.Delay(60*60*1000, stoppingToken);
         }
     }
 }
