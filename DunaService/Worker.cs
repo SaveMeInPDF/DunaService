@@ -18,8 +18,6 @@ public class Worker : BackgroundService
     private void Received(object? model, BasicDeliverEventArgs? ea)
     {
         if (ea == null) return;
-        
-        string response = string.Empty;
         var props = ea.BasicProperties;
         var replyProps = channel.CreateBasicProperties();
         replyProps.CorrelationId = props.CorrelationId;
@@ -39,7 +37,11 @@ public class Worker : BackgroundService
         // ip, название файла, токен, размер, UNIX-время, счётчик до удаления (24)
         
         // после того как ты её обработал, тебе нужно в response записать токен строкой
-        var responseBytes = Encoding.UTF8.GetBytes(response);
+        
+        SaveFile(name, file);
+        var token = Hash(body);
+        SaveToDatabase(ip, name, token, weight);
+        var responseBytes = Encoding.UTF8.GetBytes(token);
         channel.BasicPublish(exchange: string.Empty,
             routingKey: props.ReplyTo,
             basicProperties: replyProps,
