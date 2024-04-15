@@ -50,8 +50,6 @@ public class Worker : BackgroundService
         var replyProps = channel.CreateBasicProperties();
         replyProps.CorrelationId = props.CorrelationId;
 
-        // тут ты работаешь, вызываешь функции, обрабатываешь эту хрень
-
         var body = ea.Body.ToArray();
         // 4 байта - ip, 8 байт - вес файла в байтах, остальное - имя файла и сам файл
         var weight = BitConverter.ToInt32(body[..4]);
@@ -62,8 +60,6 @@ public class Worker : BackgroundService
         // сохранить файл в папку /files
         // добавить запись в базу данных такого содержания:
         // ip, название файла, токен, размер, UNIX-время, счётчик до удаления (24)
-
-        // после того как ты её обработал, тебе нужно в response записать токен строкой
 
         SaveFile(name, file);
         var token = Hash(body);
@@ -106,7 +102,7 @@ public class Worker : BackgroundService
     }
 
 
-    // каждый час проходимся по всем записям в базе данных и уменьшаем счётчик на 1
+    
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
