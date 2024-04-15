@@ -13,9 +13,37 @@ public class Worker : BackgroundService
     private readonly string _hostname = "localhost";
     private readonly ILogger<Worker> _logger;
     private readonly string mongo_adress = "mongodb://localhost:27017";
-    private IConnection connection;
-    private IModel channel;
-    private EventingBasicConsumer consumer;
+    private readonly IConnection connection;
+    private readonly IModel channel;
+    private readonly EventingBasicConsumer consumer;
+
+    private readonly MongoClient client;
+    private IMongoDatabase database;
+    private IMongoCollection<BsonDocument> collection;
+
+    public Worker(ILogger<Worker> logger)
+    {
+        client = new MongoClient(mongo_adress);
+        database = client.GetDatabase("duna");
+        collection = database.GetCollection<BsonDocument>("files");
+        
+        ConnectionFactory factory = new ConnectionFactory { HostName = _hostname };
+        connection = factory.CreateConnection();
+        channel = connection.CreateModel();
+        _logger = logger;
+        
+        channel.QueueDeclare(queue: "rpc_queue",
+            durable: false,
+            exclusive: false,
+            autoDelete: false,
+            arguments: null);
+        
+        channel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+
+        consumer = new EventingBasicConsumer(channel);
+        consumer.Received += Received;
+    }
+    
     private void Received(object? model, BasicDeliverEventArgs? ea)
     {
         if (ea == null) return;
@@ -67,10 +95,6 @@ public class Worker : BackgroundService
     // сохранить данные в таблицу MongoDB
     private void SaveToDatabase(byte[] ip, string name, string token, int weight)
     {
-        var client = new MongoClient(mongo_adress);
-        var database = client.GetDatabase("duna");
-        var collection = database.GetCollection<BsonDocument>("files");
-        
         var document = new BsonDocument
         {
             {"ip", new BsonBinaryData(ip)},
@@ -84,46 +108,24 @@ public class Worker : BackgroundService
         collection.InsertOne(document);
     }
 
-    public Worker(ILogger<Worker> logger)
-    {
-        ConnectionFactory factory = new ConnectionFactory { HostName = _hostname };
-        connection = factory.CreateConnection();
-        channel = connection.CreateModel();
-        _logger = logger;
-        
-        channel.QueueDeclare(queue: "rpc_queue",
-            durable: false,
-            exclusive: false,
-            autoDelete: false,
-            arguments: null);
-        
-        channel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-
-        consumer = new EventingBasicConsumer(channel);
-        consumer.Received += Received;
-    }
 
     // каждый час проходимся по всем записям в базе данных и уменьшаем счётчик на 1
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            var client = new MongoClient(mongo_adress);
-            var database = client.GetDatabase("duna");
-            var collection = database.GetCollection<BsonDocument>("files");
-            
-            var filter = Builders<BsonDocument>.Filter.Empty;
-            var update = Builders<BsonDocument>.Update.Inc("counter", -1);
-
-            collection.UpdateMany(filter, update);
-            
-            // удаляем все элементы, в которых счётчик = 0
-            filter = Builders<BsonDocument>.Filter.Eq("counter", 0);
-            collection.DeleteMany(filter);
-            
-            _logger.LogInformation("All counters decremented");
-
-            await Task.Delay(60 * 60 * 1000, stoppingToken);
+            // var filter = Builders<BsonDocument>.Filter.Empty;
+            // var update = Builders<BsonDocument>.Update.Inc("counter", -1);
+            //
+            // collection.UpdateMany(filter, update);
+            //
+            // // удаляем все элементы, в которых счётчик = 0
+            // filter = Builders<BsonDocument>.Filter.Eq("counter", 0);
+            // collection.DeleteMany(filter);
+            //
+            // _logger.LogInformation("All counters decremented");
+            //
+            // await Task.Delay(60 * 60 * 1000, stoppingToken);
         }
     }
 }
