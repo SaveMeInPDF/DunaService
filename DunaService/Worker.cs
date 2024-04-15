@@ -12,6 +12,7 @@ public class Worker : BackgroundService
 {
     private readonly string _hostname = "localhost";
     private readonly ILogger<Worker> _logger;
+    private readonly string mongo_adress = "mongodb://localhost:27017";
     private IConnection connection;
     private IModel channel;
     private EventingBasicConsumer consumer;
@@ -63,10 +64,10 @@ public class Worker : BackgroundService
         File.WriteAllBytes($"files/{name}", data);
     }
     
-    // сохранить данные в таблицу MongoBD
+    // сохранить данные в таблицу MongoDB
     private void SaveToDatabase(byte[] ip, string name, string token, int weight)
     {
-        var client = new MongoClient("mongodb://localhost:27017");
+        var client = new MongoClient(mongo_adress);
         var database = client.GetDatabase("duna");
         var collection = database.GetCollection<BsonDocument>("files");
         
@@ -107,7 +108,7 @@ public class Worker : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            var client = new MongoClient("mongodb://localhost:27017");
+            var client = new MongoClient(mongo_adress);
             var database = client.GetDatabase("duna");
             var collection = database.GetCollection<BsonDocument>("files");
             
@@ -118,7 +119,7 @@ public class Worker : BackgroundService
             
             _logger.LogInformation("All counters decremented");
 
-            await Task.Delay(60*60*1000, stoppingToken);
+            await Task.Delay(60 * 60 * 1000, stoppingToken);
         }
     }
 }
