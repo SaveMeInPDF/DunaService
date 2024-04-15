@@ -58,10 +58,10 @@ public class Worker : BackgroundService
         return BitConverter.ToString(hash);
     }
     
-    private void SaveFile(string name, byte[] data)
+    private void SaveFile(string token, byte[] data)
     {
         if (!Directory.Exists("files")) Directory.CreateDirectory("files");
-        File.WriteAllBytes($"files/{name}", data);
+        File.WriteAllBytes($"files/{token}", data);
     }
     
     // сохранить данные в таблицу MongoDB
@@ -116,6 +116,10 @@ public class Worker : BackgroundService
             var update = Builders<BsonDocument>.Update.Inc("counter", -1);
 
             collection.UpdateMany(filter, update);
+            
+            // удаляем все элементы, в которых счётчик = 0
+            filter = Builders<BsonDocument>.Filter.Eq("counter", 0);
+            collection.DeleteMany(filter);
             
             _logger.LogInformation("All counters decremented");
 
