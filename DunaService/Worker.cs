@@ -54,9 +54,8 @@ public class Worker : BackgroundService
 
         var body = ea.Body.ToArray();
         // 4 байта - ip, 8 байт - вес файла в байтах, остальное - имя файла и сам файл
-        var ip = body[..4];
-        var weight = BitConverter.ToInt32(body[4..8]);
-        var name = Encoding.UTF8.GetString(body[8..^weight]);
+        var weight = BitConverter.ToInt32(body[..4]);
+        var name = Encoding.UTF8.GetString(body[4..^weight]);
         var file = body[^weight..^1];
 
         // пробросить всё содержимое сообщения через хэш-функцию, таким образом сгенерировать новое имя файла (токен) в 64 символа
@@ -68,7 +67,7 @@ public class Worker : BackgroundService
 
         SaveFile(name, file);
         var token = Hash(body);
-        SaveToDatabase(ip, name, token, weight);
+        SaveToDatabase(name, token, weight);
         var responseBytes = Encoding.UTF8.GetBytes(token);
         channel.BasicPublish(exchange: string.Empty,
             routingKey: props.ReplyTo,
@@ -92,11 +91,10 @@ public class Worker : BackgroundService
     }
 
     // сохранить данные в таблицу MongoDB
-    private void SaveToDatabase(byte[] ip, string name, string token, int weight)
+    private void SaveToDatabase(string name, string token, int weight)
     {
         var document = new BsonDocument
         {
-            { "ip", new BsonBinaryData(ip) },
             { "name", name },
             { "token", token },
             { "weight", weight },
